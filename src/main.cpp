@@ -14,6 +14,9 @@ void setup() {
     Serial.println("System initialized. Start Spotify visulizer...");
 
     Network::init_wifi();
+
+    // Sync clock via NTP so TLS certificate validation succeeds (prevents 1970 clock default error)
+    Spotify::Detail::ntp_sync_time();
 }
 
 void loop() {

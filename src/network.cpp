@@ -2,6 +2,7 @@
 #include "secrets.hpp"
 
 #include <WiFi.h>
+
 #include <cstddef>
 
 namespace Network {
@@ -58,4 +59,4 @@ void handle_reconn() {
     }
 }
 
-}  // namespace Network
+} // namespace Network
