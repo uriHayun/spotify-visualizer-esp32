@@ -14,7 +14,7 @@ void fetch_curr_track() {
     WiFiClientSecure client;
     HTTPClient http;
 
-    Serial.println("Fetching  playing track from Spotify...");
+    Serial.println("Fetching playing track from Spotify...");
 
     if (!http.begin(client, "https://api.spotify.com/v1/me/player/currently-playing")) {
         Serial.println("Failed to begin HTTPS session");
@@ -28,52 +28,56 @@ void fetch_curr_track() {
 
     const int http_res_code = http.GET();
 
-    if (http_res_code >= 0) {
-        switch (http_res_code) {
-        case (HTTP_CODE_OK):
-            const String payload = http.getString().c_str();
-            Serial.println("Received response from Spotify API: ", payload.c_str());
+    // Intercept low-level network or hardware errors first
+    if (http_code <= 0) {
+        Serial.printf("HTTP %d: connection failed or blocked", http_code);
+        return;  // Stop execution early since there is no server response to switch on
+    }
 
-            JsonDocument doc;
-            DeserializationError error = deserializeJson(doc, payload);
+    switch (http_res_code) {
+    case (HTTP_CODE_OK):
+        const String payload = http.getString();
+        Serial.println("Received response from Spotify API: ", payload.c_str());
 
-            if (error) {
-                Serial.print("Failed to parse JSON: ");
-                Serial.println(error.c_str());
-                http.end();
-                return;
-            }
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, payload);
 
-            bool is_playing = doc["is_playing"] | false;
-
-            if (!doc["item"].isNull()) {
-                const String track_name = doc["item"]["name"];
-                const String artist_name = doc["item"]["artists"][0]["name"];
-                const String album_name = doc["item"]["album"]["name"];
-            } else {
-                Serial.println("There was no active playback found (track data is NULL)");
-            }
-
-            break;
-        case (HTTP_CODE_NO_CONTENT):
-            Serial.println("HTTP 204: no content. Connected successfully, no track is playing "
-                           "right now though");
-            break;
-        case (HTTP_CODE_UNAUTHORIZED):
-            Serial.println("HTTP 401: unauthorized. "
-                           "Your Spotify access token has expired or is invalid");
-            break;
-        case (HTTP_CODE_FORBIDDEN):
-            Serial.println("HTTP 403: access forbidden. Your Spotify access token has expired, is "
-                           "invalid, or your account isn't premium");
-            break;
-        case (HTTP_CODE_TOO_MANY_REQUESTS):
-            Serial.println("HTTP 429: too many requests. Application has exceeded rate limits");
-            break;
-        default:
-            Serial.printf("Unexpected HTTP response code: %d\n", http_res_code);
-            break;
+        if (error) {
+            Serial.print("Failed to parse JSON: ");
+            Serial.println(error.c_str());
+            http.end();
+            return;
         }
+
+        bool is_playing = doc["is_playing"] | false;
+
+        if (!doc["item"].isNull()) {
+            const String track_name = doc["item"]["name"];
+            const String artist_name = doc["item"]["artists"][0]["name"];
+            const String album_name = doc["item"]["album"]["name"];
+        } else {
+            Serial.println("There was no active playback found (track data is NULL)");
+        }
+
+        break;
+    case (HTTP_CODE_NO_CONTENT):
+        Serial.println("HTTP 204: no content. Connected successfully, no track is playing "
+                       "right now though");
+        break;
+    case (HTTP_CODE_UNAUTHORIZED):
+        Serial.println("HTTP 401: unauthorized. "
+                       "Your Spotify access token has expired or is invalid");
+        break;
+    case (HTTP_CODE_FORBIDDEN):
+        Serial.println("HTTP 403: access forbidden. Your Spotify access token has expired, is "
+                       "invalid, or your account isn't premium");
+        break;
+    case (HTTP_CODE_TOO_MANY_REQUESTS):
+        Serial.println("HTTP 429: too many requests. Application has exceeded rate limits");
+        break;
+    default:
+        Serial.printf("Unexpected HTTP response code: %d\n", http_res_code);
+        break;
     }
 
     http.end();

@@ -17,6 +17,8 @@ void setup() {
 
     // Sync clock via NTP so TLS certificate validation succeeds (prevents 1970 clock default error)
     Spotify::Detail::ntp_sync_time();
+
+    Spotify::fetch_curr_track();
 }
 
 void loop() {
