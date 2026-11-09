@@ -1,4 +1,5 @@
 #include "spotify.hpp"
+#include "esp_sntp.h"
 #include "secrets.hpp"
 
 #include <ArduinoJson.h>
@@ -6,11 +7,13 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
-#include <string>
+#include <chrono>
+#include <thread>
 
 namespace Spotify {
 
-void fetch_curr_track() {
+TrackInfo fetch_curr_track_info() {
+    TrackInfo track_info;
     WiFiClientSecure client;
     HTTPClient http;
 
@@ -18,7 +21,7 @@ void fetch_curr_track() {
 
     if (!http.begin(client, "https://api.spotify.com/v1/me/player/currently-playing")) {
         Serial.println("Failed to begin HTTPS session");
-        return;
+        return track_info;
     }
 
     String auth_header = "Bearer " + String(SPOTIFY_ACCESS_TOKEN);
@@ -29,9 +32,9 @@ void fetch_curr_track() {
     const int http_res_code = http.GET();
 
     // Intercept low-level network or hardware errors first
-    if (http_code <= 0) {
-        Serial.printf("HTTP %d: connection failed or blocked", http_code);
-        return;  // Stop execution early since there is no server response to switch on
+    if (http_res_code <= 0) {
+        Serial.printf("HTTP %d: connection failed or blocked", http_res_code);
+        return track_info;
     }
 
     switch (http_res_code) {
@@ -40,21 +43,22 @@ void fetch_curr_track() {
         Serial.println("Received response from Spotify API: ", payload.c_str());
 
         JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, payload);
+        DeserializationError err = deserializeJson(doc, payload);
 
-        if (error) {
+        if (err) {
             Serial.print("Failed to parse JSON: ");
-            Serial.println(error.c_str());
+            Serial.println(err.c_str());
             http.end();
-            return;
+            return track_info;
         }
 
-        bool is_playing = doc["is_playing"] | false;
+        track_info.is_playing = doc["is_playing"] | false;
 
         if (!doc["item"].isNull()) {
-            const String track_name = doc["item"]["name"];
-            const String artist_name = doc["item"]["artists"][0]["name"];
-            const String album_name = doc["item"]["album"]["name"];
+            track_info.title = doc["item"]["name"].as<String>();
+            track_info.artist = doc["item"]["artists"][0]["name"].as<String>();
+            track_info.album = doc["item"]["album"]["name"].as<String>();
+            track_info.success = true;
         } else {
             Serial.println("There was no active playback found (track data is NULL)");
         }
@@ -81,6 +85,7 @@ void fetch_curr_track() {
     }
 
     http.end();
+    return track_info;
 }
 
 void update_curr_track() {
@@ -88,7 +93,7 @@ void update_curr_track() {
         unsigned long current_millis = millis();
         if (current_millis - last_spotify_poll >= SPOTIFY_POLL_INTERVAL) {
             last_spotify_poll = current_millis;
-            Spotify::fetch_curr_track();
+            Spotify::fetch_curr_track_info();
         }
     }
 }
@@ -97,22 +102,38 @@ void update_curr_track() {
 
 namespace Spotify::Detail {
 
-void ntp_sync_time() {
-    // Configuration for standard UTC time
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-
-    Serial.print("Waiting for NTP time sync: ");
-    time_t now_secs = time(nullptr);
-
-    // Wait until year is past 1970 (~9.1.1970)
-    while (now_secs < 8 * 3600 * 24) {
-        delay(500);
-        Serial.print(".");
-        now_secs = time(nullptr);
+// Solves Unix Epoch default time problem by syncing the time with NTP,
+// in order to validate TLS certificates for HTTPS requests (prevents 1970 clock default error)
+bool sync_device_ntp() {
+    if (esp_sntp_enabled() == 0) {
+        esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        esp_sntp_setservername(0, NTP_SERVER.data());
+        esp_sntp_init();
     }
 
-    Serial.println();
-    Serial.println("Time synchronized successfully!");
+    const auto start_time = std::chrono::steady_clock::now();
+
+    Serial.print("Waiting for NTP time sync: ");
+    while (true) {
+        if (std::time(nullptr) >= minimum_valid_epoch) {
+            Serial.println();
+            Serial.println("Time synchronized successfully!");
+
+            return true;
+        }
+
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_time)
+                                 .count();
+
+        if (std::static_cast<std::size_t>(elapsed) >= TIMEOUT_MS) {
+            Serial.println();
+            return false;
+        }
+
+        Serial.print(".");
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
 }
 
 }  // namespace Spotify::Detail

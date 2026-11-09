@@ -15,10 +15,15 @@ void setup() {
 
     Network::init_wifi();
 
-    // Sync clock via NTP so TLS certificate validation succeeds (prevents 1970 clock default error)
-    Spotify::Detail::ntp_sync_time();
+    // Sync clock via NTP so TLS certificate validation succeeds
+    //(prevent 1970 Unix Epoch default time problem)
+    if (Spotify::Detail::sync_device_ntp()) {
+        Serial.println("NTP time sync successful");
+    } else {
+        Serial.println("NTP time sync failed. TLS certificate validation might fail");
+    }
 
-    Spotify::fetch_curr_track();
+    TrackInfo curr_track_info = Spotify::fetch_curr_track_info();
 }
 
 void loop() {
