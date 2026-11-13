@@ -1,13 +1,19 @@
+
 #include "config.hpp"
 #include "secrets.hpp"
+#include "network.hpp"
 
 #include <WiFi.h>
 
 #include <cstddef>
 
-namespace Network {
+namespace {
 
 unsigned long prev_ms = 0;
+
+}  // namespace (anonymous)
+
+namespace Network {
 
 void init_wifi() {
     // Set WiFi mode to STA (Station) - wireless microcontroller acts as a client
@@ -15,19 +21,13 @@ void init_wifi() {
 
     // Scan for nearby networks and print to Serial Monitor
     const int NETWORKS = WiFi.scanNetworks();
-    Serial.print("Found ");
-    Serial.print(NETWORKS);
-    Serial.println(" networks:");
+    Serial.printf("Found %d networks: ", NETWORKS);
     for (int i = 0; i < NETWORKS; i++) {
-        Serial.print(i + 1);
-        Serial.print(": ");
-        Serial.print(WiFi.SSID(i));
-        Serial.print(" (");
-        Serial.print(WiFi.RSSI(i));
-        Serial.println(" dBm)");
+        const String ssid = WiFi.SSID(i);
+        Serial.printf("%d: %s (%d dBm)\n", i + 1, ssid.c_str(), WiFi.RSSI(i));
     }
 
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.begin(Secrets::WIFI_SSID, Secrets::WIFI_PASSWORD);
 
     std::size_t conn_attempts = 0;
     while (WiFi.status() != WL_CONNECTED && conn_attempts < Config::MAX_RECONN_ATTEMPTS) {
@@ -40,23 +40,25 @@ void init_wifi() {
     Serial.println();
 
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("WiFi connected successfully!");
-        Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP());
+        const String ip_address = WiFi.localIP().toString();
+        Serial.printf("WiFi connected successfully!\nIP Address: %s\n", ip_address.c_str());
     } else {
         Serial.println("Failed to connect to WiFi");
     }
 }
 
-void handle_reconn() {
+bool handle_reconn() {
     if (WiFi.status() != WL_CONNECTED) {
         unsigned long curr_ms = millis();
 
         if (curr_ms - prev_ms >= Config::RECONN_INTERVAL_MS) {
             Serial.println("WiFi lost. Attempting to reconnect...");
+            prev_ms = curr_ms;
             WiFi.reconnect();
         }
     }
+
+    return WiFi.status() == WL_CONNECTED;
 }
 
-} // namespace Network
+}  // namespace Network

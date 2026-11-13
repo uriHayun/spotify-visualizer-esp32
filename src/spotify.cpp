@@ -2,6 +2,7 @@
 #include "esp_sntp.h"
 #include "secrets.hpp"
 
+#include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -12,10 +13,14 @@
 
 namespace Spotify {
 
-TrackInfo fetch_curr_track_info() {
+TrackInfo fetch_curr_track() {
     TrackInfo track_info;
     WiFiClientSecure client;
     HTTPClient http;
+
+    if (!Detail::tls_certify_requests(client)) {
+        return track_info;
+    }
 
     Serial.println("Fetching playing track from Spotify...");
 
@@ -24,7 +29,7 @@ TrackInfo fetch_curr_track_info() {
         return track_info;
     }
 
-    String auth_header = "Bearer " + String(SPOTIFY_ACCESS_TOKEN);
+    String auth_header = "Bearer " + String(Secrets::SPOTIFY_ACCESS_TOKEN);
 
     http.addHeader("Authorization", auth_header);
     http.addHeader("Content-Type", "application/json");
@@ -33,21 +38,20 @@ TrackInfo fetch_curr_track_info() {
 
     // Intercept low-level network or hardware errors first
     if (http_res_code <= 0) {
-        Serial.printf("HTTP %d: connection failed or blocked", http_res_code);
+        Serial.printf("HTTP %d: connection failed or blocked\n", http_res_code);
         return track_info;
     }
 
     switch (http_res_code) {
-    case (HTTP_CODE_OK):
+    case (HTTP_CODE_OK): {
         const String payload = http.getString();
-        Serial.println("Received response from Spotify API: ", payload.c_str());
+        Serial.printf("Received response from Spotify API: %s\n", payload.c_str());
 
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, payload);
 
         if (err) {
-            Serial.print("Failed to parse JSON: ");
-            Serial.println(err.c_str());
+            Serial.printf("Failed to parse JSON: %s\n", err.c_str());
             http.end();
             return track_info;
         }
@@ -64,17 +68,19 @@ TrackInfo fetch_curr_track_info() {
         }
 
         break;
+    }
+
     case (HTTP_CODE_NO_CONTENT):
         Serial.println("HTTP 204: no content. Connected successfully, no track is playing "
-                       "right now though");
+                      "right now though");
         break;
     case (HTTP_CODE_UNAUTHORIZED):
         Serial.println("HTTP 401: unauthorized. "
-                       "Your Spotify access token has expired or is invalid");
+                      "Your Spotify access token has expired or is invalid");
         break;
     case (HTTP_CODE_FORBIDDEN):
         Serial.println("HTTP 403: access forbidden. Your Spotify access token has expired, is "
-                       "invalid, or your account isn't premium");
+                      "invalid, or your account isn't premium");
         break;
     case (HTTP_CODE_TOO_MANY_REQUESTS):
         Serial.println("HTTP 429: too many requests. Application has exceeded rate limits");
@@ -88,12 +94,12 @@ TrackInfo fetch_curr_track_info() {
     return track_info;
 }
 
-void update_curr_track() {
+void update_curr_track(TrackInfo &curr_track) {
     if (WiFi.status() == WL_CONNECTED) {
-        unsigned long current_millis = millis();
-        if (current_millis - last_spotify_poll >= SPOTIFY_POLL_INTERVAL) {
-            last_spotify_poll = current_millis;
-            Spotify::fetch_curr_track_info();
+        const unsigned long curr_millis = millis();
+        if (curr_millis - last_spotify_poll >= SPOTIFY_POLL_INTERVAL) {
+            last_spotify_poll = curr_millis;
+            curr_track = fetch_curr_track();
         }
     }
 }
@@ -113,7 +119,7 @@ bool sync_device_ntp() {
 
     const auto start_time = std::chrono::steady_clock::now();
 
-    Serial.print("Waiting for NTP time sync: ");
+    Serial.printf("Waiting for NTP time sync: ");
     while (true) {
         if (std::time(nullptr) >= minimum_valid_epoch) {
             Serial.println();
@@ -126,14 +132,24 @@ bool sync_device_ntp() {
             std::chrono::steady_clock::now() - start_time)
                                  .count();
 
-        if (std::static_cast<std::size_t>(elapsed) >= TIMEOUT_MS) {
+        if (static_cast<std::size_t>(elapsed) >= TIMEOUT_MS) {
             Serial.println();
             return false;
         }
 
-        Serial.print(".");
+        Serial.printf(".");
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
+}
+
+bool tls_certify_requests(WiFiClientSecure &client) {
+    if (Secrets::SPOTIFY_ROOT_CA == nullptr || Secrets::SPOTIFY_ROOT_CA[0] == '\0') {
+        Serial.println("Spotify root CA certificate isn't configured");
+        return false;
+    }
+
+    client.setCACert(Secrets::SPOTIFY_ROOT_CA);
+    return true;
 }
 
 }  // namespace Spotify::Detail
