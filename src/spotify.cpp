@@ -13,7 +13,7 @@
 
 namespace Spotify {
 
-TrackInfo fetch_curr_track() {
+TrackInfo fetch_curr_track_info() {
     TrackInfo track_info;
     WiFiClientSecure client;
     HTTPClient http;
@@ -29,7 +29,7 @@ TrackInfo fetch_curr_track() {
         return track_info;
     }
 
-    String auth_header = "Bearer " + String(Secrets::SPOTIFY_ACCESS_TOKEN);
+    String auth_header = "Bearer " + String(Secrets::Spotify::SPOTIFY_ACCESS_TOKEN);
 
     http.addHeader("Authorization", auth_header);
     http.addHeader("Content-Type", "application/json");
@@ -72,15 +72,15 @@ TrackInfo fetch_curr_track() {
 
     case (HTTP_CODE_NO_CONTENT):
         Serial.println("HTTP 204: no content. Connected successfully, no track is playing "
-                      "right now though");
+                       "right now though");
         break;
     case (HTTP_CODE_UNAUTHORIZED):
         Serial.println("HTTP 401: unauthorized. "
-                      "Your Spotify access token has expired or is invalid");
+                       "Your Spotify access token has expired or is invalid");
         break;
     case (HTTP_CODE_FORBIDDEN):
         Serial.println("HTTP 403: access forbidden. Your Spotify access token has expired, is "
-                      "invalid, or your account isn't premium");
+                       "invalid, or your account isn't premium");
         break;
     case (HTTP_CODE_TOO_MANY_REQUESTS):
         Serial.println("HTTP 429: too many requests. Application has exceeded rate limits");
@@ -94,13 +94,14 @@ TrackInfo fetch_curr_track() {
     return track_info;
 }
 
-void update_curr_track(TrackInfo &curr_track) {
-    if (WiFi.status() == WL_CONNECTED) {
-        const unsigned long curr_millis = millis();
-        if (curr_millis - last_spotify_poll >= SPOTIFY_POLL_INTERVAL) {
-            last_spotify_poll = curr_millis;
-            curr_track = fetch_curr_track();
-        }
+void update_curr_track_info(TrackInfo &curr_track_info) {
+    static unsigned long last_spotify_poll = 0;
+
+    const unsigned long now_ms = millis();
+    if (WiFi.status() == WL_CONNECTED &&
+        now_ms - last_spotify_poll >= Config::Spotify::SPOTIFY_POLL_INTERVAL_MS) {
+        last_spotify_poll = now_ms;
+        curr_track_info = fetch_curr_track_info();
     }
 }
 
@@ -113,15 +114,15 @@ namespace Spotify::Detail {
 bool sync_device_ntp() {
     if (esp_sntp_enabled() == 0) {
         esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-        esp_sntp_setservername(0, NTP_SERVER.data());
+        esp_sntp_setservername(0, Config::Spotify::NTP_SERVER.data());
         esp_sntp_init();
     }
 
     const auto start_time = std::chrono::steady_clock::now();
 
-    Serial.printf("Waiting for NTP time sync: ");
+    Serial.print("Waiting for NTP time sync: ");
     while (true) {
-        if (std::time(nullptr) >= minimum_valid_epoch) {
+        if (std::time(nullptr) >= Config::Spotify::MIN_VALID_EPOCH) {
             Serial.println();
             Serial.println("Time synchronized successfully!");
 
@@ -132,7 +133,7 @@ bool sync_device_ntp() {
             std::chrono::steady_clock::now() - start_time)
                                  .count();
 
-        if (static_cast<std::size_t>(elapsed) >= TIMEOUT_MS) {
+        if (static_cast<std::size_t>(elapsed) >= Config::Spotify::NTP_SYNC_TIMEOUT_MS) {
             Serial.println();
             return false;
         }
@@ -143,12 +144,13 @@ bool sync_device_ntp() {
 }
 
 bool tls_certify_requests(WiFiClientSecure &client) {
-    if (Secrets::SPOTIFY_ROOT_CA == nullptr || Secrets::SPOTIFY_ROOT_CA[0] == '\0') {
+    if (Secrets::Spotify::SPOTIFY_ROOT_CA == nullptr ||
+        Secrets::Spotify::SPOTIFY_ROOT_CA[0] == '\0') {
         Serial.println("Spotify root CA certificate isn't configured");
         return false;
     }
 
-    client.setCACert(Secrets::SPOTIFY_ROOT_CA);
+    client.setCACert(Secrets::Spotify::SPOTIFY_ROOT_CA);
     return true;
 }
 

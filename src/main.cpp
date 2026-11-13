@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
-Spotify::TrackInfo curr_track;
+Spotify::TrackInfo curr_track_info;
 
 void setup() {
     Serial.begin(115200);
@@ -25,14 +25,14 @@ void setup() {
         Serial.println("NTP time sync failed. TLS certificate validation might fail");
     }
 
-    curr_track = Spotify::fetch_curr_track();
+    curr_track_info = Spotify::fetch_curr_track_info();
 }
 
 void loop() {
     // Continuosly attempt reconnection if Wifi was lost
     if (Network::handle_reconn()) {
         // Continuosly update currently playing track if connected to WiFi
-        Spotify::update_curr_track(curr_track);
+        Spotify::update_curr_track_info(curr_track_info);
     }
 
     delay(100);

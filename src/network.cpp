@@ -1,7 +1,7 @@
 
+#include "network.hpp"
 #include "config.hpp"
 #include "secrets.hpp"
-#include "network.hpp"
 
 #include <WiFi.h>
 
@@ -11,7 +11,7 @@ namespace {
 
 unsigned long prev_ms = 0;
 
-}  // namespace (anonymous)
+}  // namespace
 
 namespace Network {
 
@@ -27,10 +27,10 @@ void init_wifi() {
         Serial.printf("%d: %s (%d dBm)\n", i + 1, ssid.c_str(), WiFi.RSSI(i));
     }
 
-    WiFi.begin(Secrets::WIFI_SSID, Secrets::WIFI_PASSWORD);
+    WiFi.begin(Secrets::Wifi::WIFI_SSID, Secrets::Wifi::WIFI_PASSWORD);
 
     std::size_t conn_attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && conn_attempts < Config::MAX_RECONN_ATTEMPTS) {
+    while (WiFi.status() != WL_CONNECTED && conn_attempts < Config::Wifi::MAX_RECONN_ATTEMPTS) {
         delay(500);
         Serial.print(".");
         conn_attempts++;
@@ -51,7 +51,7 @@ bool handle_reconn() {
     if (WiFi.status() != WL_CONNECTED) {
         unsigned long curr_ms = millis();
 
-        if (curr_ms - prev_ms >= Config::RECONN_INTERVAL_MS) {
+        if (curr_ms - prev_ms >= Config::Wifi::RECONN_INTERVAL_MS) {
             Serial.println("WiFi lost. Attempting to reconnect...");
             prev_ms = curr_ms;
             WiFi.reconnect();
